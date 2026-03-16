@@ -50,3 +50,17 @@ spoofdpi-ctl disable         # Otomatik başlatmayı kapat
 
 - Stdout: `/usr/local/var/log/spoofdpi/spoofdpi.log`
 - Stderr: `/usr/local/var/log/spoofdpi/spoofdpi.error.log`
+
+## Hızlı Kurulum
+
+```bash
+git clone https://github.com/HyperDev1/spoofdpi-service.git
+cd spoofdpi-service
+./install.sh
+```
+
+Kurulumu kaldırmak için:
+
+```bash
+./install.sh --uninstall
+```
