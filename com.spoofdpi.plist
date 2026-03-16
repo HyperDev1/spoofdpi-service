@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.spoofdpi</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/spoofdpi</string>
+        <string>-addr</string>
+        <string>127.0.0.1</string>
+        <string>-port</string>
+        <string>8080</string>
+        <string>-system-proxy</string>
+        <string>-silent</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/spoofdpi/spoofdpi.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/spoofdpi/spoofdpi.error.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

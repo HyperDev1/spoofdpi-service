@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# spoofdpi-ctl — SpoofDPI servis yönetim aracı
+
+set -euo pipefail
+
+LABEL="com.spoofdpi"
+PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
+LOG_OUT="/usr/local/var/log/spoofdpi/spoofdpi.log"
+LOG_ERR="/usr/local/var/log/spoofdpi/spoofdpi.error.log"
+
+# ── Renkler ────────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+ok()   { echo -e "${GREEN}✓${RESET} $*"; }
+err()  { echo -e "${RED}✗${RESET} $*" >&2; }
+info() { echo -e "${CYAN}→${RESET} $*"; }
+warn() { echo -e "${YELLOW}!${RESET} $*"; }
+
+# ── Yardımcılar ────────────────────────────────────────────────────────────────
+is_loaded() {
+    launchctl list "$LABEL" &>/dev/null
+}
+
+is_running() {
+    local pid
+    pid=$(launchctl list "$LABEL" 2>/dev/null | grep '"PID"' | grep -oE '[0-9]+')
+    [[ "$pid" =~ ^[0-9]+$ ]]
+}
+
+get_pid() {
+    launchctl list "$LABEL" 2>/dev/null | grep '"PID"' | grep -oE '[0-9]+'
+}
+
+check_plist() {
+    if [[ ! -f "$PLIST" ]]; then
+        err "Plist bulunamadı: $PLIST"
+        exit 1
+    fi
+}
+
+# ── Komutlar ───────────────────────────────────────────────────────────────────
+cmd_start() {
+    check_plist
+    if is_running; then
+        warn "SpoofDPI zaten çalışıyor (PID: $(get_pid))"
+        return
+    fi
+    if ! is_loaded; then
+        launchctl load "$PLIST"
+    fi
+    launchctl start "$LABEL"
+    sleep 0.5
+    if is_running; then
+        ok "SpoofDPI başlatıldı (PID: $(get_pid))"
+    else
+        err "Başlatılamadı. Log kontrol et: spoofdpi log"
+        exit 1
+    fi
+}
+
+cmd_stop() {
+    if ! is_loaded; then
+        warn "SpoofDPI zaten durmuş"
+        return
+    fi
+    launchctl stop "$LABEL"
+    sleep 0.5
+    if ! is_running; then
+        ok "SpoofDPI durduruldu"
+    else
+        err "Durdurulamadı"
+        exit 1
+    fi
+}
+
+cmd_restart() {
+    info "Yeniden başlatılıyor..."
+    cmd_stop
+    sleep 0.3
+    cmd_start
+}
+
+cmd_status() {
+    echo -e "${BOLD}SpoofDPI Servis Durumu${RESET}"
+    echo "──────────────────────────────"
+    if is_running; then
+        local pid
+        pid=$(get_pid)
+        echo -e "Durum  : ${GREEN}● Çalışıyor${RESET}"
+        echo -e "PID    : ${CYAN}$pid${RESET}"
+        # Proxy port
+        local port
+        port=$(ps aux | grep '[s]poofdpi' | grep -oE '\-port [0-9]+' | awk '{print $2}')
+        [[ -n "$port" ]] && echo -e "Port   : ${CYAN}$port${RESET}" || echo -e "Port   : ${CYAN}8080${RESET} (varsayılan)"
+    else
+        echo -e "Durum  : ${RED}● Durmuş${RESET}"
+    fi
+    echo -e "Plist  : $PLIST"
+    echo -e "Log    : $LOG_OUT"
+    echo "──────────────────────────────"
+}
+
+cmd_log() {
+    local lines="${1:-50}"
+    if [[ ! -f "$LOG_OUT" ]]; then
+        warn "Log dosyası henüz oluşturulmadı"
+        return
+    fi
+    echo -e "${BOLD}Son $lines satır (stdout):${RESET}"
+    tail -n "$lines" "$LOG_OUT"
+    if [[ -f "$LOG_ERR" ]] && [[ -s "$LOG_ERR" ]]; then
+        echo ""
+        echo -e "${BOLD}Son $lines satır (stderr):${RESET}"
+        tail -n "$lines" "$LOG_ERR"
+    fi
+}
+
+cmd_log_follow() {
+    info "Log takip ediliyor (çıkmak için Ctrl+C)..."
+    tail -f "$LOG_OUT" &
+    TAIL_PID=$!
+    trap "kill $TAIL_PID 2>/dev/null" EXIT
+    wait
+}
+
+cmd_enable() {
+    check_plist
+    # Plist'teki RunAtLoad'u true yap
+    /usr/libexec/PlistBuddy -c "Set :RunAtLoad true" "$PLIST"
+    if ! is_loaded; then
+        launchctl load "$PLIST"
+    else
+        launchctl unload "$PLIST"
+        launchctl load "$PLIST"
+    fi
+    ok "Otomatik başlatma aktif — login olduğunda otomatik başlayacak"
+}
+
+cmd_disable() {
+    check_plist
+    /usr/libexec/PlistBuddy -c "Set :RunAtLoad false" "$PLIST"
+    if is_loaded; then
+        launchctl unload "$PLIST"
+        launchctl load "$PLIST"
+    fi
+    ok "Otomatik başlatma devre dışı"
+}
+
+cmd_help() {
+    echo -e "${BOLD}spoofdpi-ctl${RESET} — SpoofDPI servis yönetim aracı"
+    echo ""
+    echo -e "${BOLD}Kullanım:${RESET}"
+    echo -e "  spoofdpi-ctl ${CYAN}start${RESET}           Servisi başlat"
+    echo -e "  spoofdpi-ctl ${CYAN}stop${RESET}            Servisi durdur"
+    echo -e "  spoofdpi-ctl ${CYAN}restart${RESET}         Servisi yeniden başlat"
+    echo -e "  spoofdpi-ctl ${CYAN}status${RESET}          Servis durumunu göster"
+    echo -e "  spoofdpi-ctl ${CYAN}log${RESET} [n]         Son n satır logu göster (varsayılan: 50)"
+    echo -e "  spoofdpi-ctl ${CYAN}log -f${RESET}          Logu canlı takip et"
+    echo -e "  spoofdpi-ctl ${CYAN}enable${RESET}          Login'de otomatik başlatmayı aç"
+    echo -e "  spoofdpi-ctl ${CYAN}disable${RESET}         Login'de otomatik başlatmayı kapat"
+    echo ""
+}
+
+# ── Ana giriş ──────────────────────────────────────────────────────────────────
+case "${1:-help}" in
+    start)    cmd_start ;;
+    stop)     cmd_stop ;;
+    restart)  cmd_restart ;;
+    status)   cmd_status ;;
+    log)
+        if [[ "${2:-}" == "-f" ]]; then
+            cmd_log_follow
+        else
+            cmd_log "${2:-50}"
+        fi
+        ;;
+    enable)   cmd_enable ;;
+    disable)  cmd_disable ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        err "Bilinmeyen komut: $1"
+        cmd_help
+        exit 1
+        ;;
+esac
