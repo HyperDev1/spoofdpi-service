@@ -34,15 +34,16 @@ BINARY_SRC="$SCRIPT_DIR/$BINARY_NAME"
 CTL_SRC="$SCRIPT_DIR/spoofdpi-ctl"
 PLIST_SRC="$SCRIPT_DIR/com.spoofdpi.plist"
 
-BIN_DIR="/opt/homebrew/bin"
-# Apple Silicon'da /opt/homebrew/var, Intel'de /usr/local/var
-if [[ -d "/opt/homebrew/var" ]]; then
-    LOG_DIR="/opt/homebrew/var/log/spoofdpi"
-elif [[ -d "/usr/local/var" ]]; then
-    LOG_DIR="/usr/local/var/log/spoofdpi"
+# Apple Silicon'da /opt/homebrew, Intel'de /usr/local
+if [[ -d "/opt/homebrew" ]]; then
+    BREW_PREFIX="/opt/homebrew"
+elif [[ -d "/usr/local/Homebrew" ]] || [[ -x "/usr/local/bin/brew" ]]; then
+    BREW_PREFIX="/usr/local"
 else
-    LOG_DIR="/opt/homebrew/var/log/spoofdpi"
+    BREW_PREFIX="/opt/homebrew"
 fi
+BIN_DIR="$BREW_PREFIX/bin"
+LOG_DIR="$BREW_PREFIX/var/log/spoofdpi"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 PLIST_DEST="$LAUNCH_AGENTS_DIR/com.spoofdpi.plist"
 LABEL="com.spoofdpi"
