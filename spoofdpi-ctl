@@ -5,8 +5,16 @@ set -euo pipefail
 
 LABEL="com.spoofdpi"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
-LOG_OUT="/usr/local/var/log/spoofdpi/spoofdpi.log"
-LOG_ERR="/usr/local/var/log/spoofdpi/spoofdpi.error.log"
+BIN_DIR="/opt/homebrew/bin"
+
+# Log dizinini dinamik bul
+if [[ -d "/opt/homebrew/var/log/spoofdpi" ]]; then
+    LOG_OUT="/opt/homebrew/var/log/spoofdpi/spoofdpi.log"
+    LOG_ERR="/opt/homebrew/var/log/spoofdpi/spoofdpi.error.log"
+else
+    LOG_OUT="/usr/local/var/log/spoofdpi/spoofdpi.log"
+    LOG_ERR="/usr/local/var/log/spoofdpi/spoofdpi.error.log"
+fi
 
 # ── Renkler ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -53,12 +61,17 @@ cmd_start() {
     if ! is_loaded; then
         launchctl load "$PLIST"
     fi
-    launchctl start "$LABEL"
+    # macOS Ventura+ launchctl start yerine kickstart kullanır
+    if launchctl kickstart -k "gui/$(id -u)/$LABEL" &>/dev/null 2>&1; then
+        true
+    else
+        launchctl start "$LABEL" 2>/dev/null || true
+    fi
     sleep 0.5
     if is_running; then
         ok "SpoofDPI başlatıldı (PID: $(get_pid))"
     else
-        err "Başlatılamadı. Log kontrol et: spoofdpi log"
+        err "Başlatılamadı. Log kontrol et: spoofdpi-ctl log"
         exit 1
     fi
 }
@@ -68,7 +81,12 @@ cmd_stop() {
         warn "SpoofDPI zaten durmuş"
         return
     fi
-    launchctl stop "$LABEL"
+    # macOS Ventura+ kickstart/bootout tercih eder
+    if launchctl kill TERM "gui/$(id -u)/$LABEL" &>/dev/null 2>&1; then
+        true
+    else
+        launchctl stop "$LABEL" 2>/dev/null || true
+    fi
     sleep 0.5
     if ! is_running; then
         ok "SpoofDPI durduruldu"

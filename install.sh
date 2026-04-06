@@ -19,12 +19,30 @@ step() { echo -e "\n${BOLD}$*${RESET}"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-BINARY_SRC="$SCRIPT_DIR/spoofdpi"
+# ── Quarantine etiketlerini kaldır (Gatekeeper engeli) ────────────────────────
+xattr -cr "$SCRIPT_DIR" 2>/dev/null || true
+
+# ── Mimari tespiti ─────────────────────────────────────────────────────────────
+ARCH="$(uname -m)"
+if [[ "$ARCH" == "arm64" ]]; then
+    BINARY_NAME="spoofdpi-arm64"
+else
+    BINARY_NAME="spoofdpi"
+fi
+
+BINARY_SRC="$SCRIPT_DIR/$BINARY_NAME"
 CTL_SRC="$SCRIPT_DIR/spoofdpi-ctl"
 PLIST_SRC="$SCRIPT_DIR/com.spoofdpi.plist"
 
-BIN_DIR="/usr/local/bin"
-LOG_DIR="/usr/local/var/log/spoofdpi"
+BIN_DIR="/opt/homebrew/bin"
+# Apple Silicon'da /opt/homebrew/var, Intel'de /usr/local/var
+if [[ -d "/opt/homebrew/var" ]]; then
+    LOG_DIR="/opt/homebrew/var/log/spoofdpi"
+elif [[ -d "/usr/local/var" ]]; then
+    LOG_DIR="/usr/local/var/log/spoofdpi"
+else
+    LOG_DIR="/opt/homebrew/var/log/spoofdpi"
+fi
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 PLIST_DEST="$LAUNCH_AGENTS_DIR/com.spoofdpi.plist"
 LABEL="com.spoofdpi"
@@ -71,20 +89,10 @@ fi
 # ── Ön kontroller ──────────────────────────────────────────────────────────────
 step "[0/5] Kontroller..."
 
-[[ ! -f "$BINARY_SRC" ]] && { err "spoofdpi binary bulunamadı: $BINARY_SRC"; exit 1; }
+[[ ! -f "$BINARY_SRC" ]] && { err "spoofdpi binary bulunamadı: $BINARY_SRC (mimari: $ARCH)"; exit 1; }
 [[ ! -f "$CTL_SRC" ]]    && { err "spoofdpi-ctl bulunamadı: $CTL_SRC"; exit 1; }
 [[ ! -f "$PLIST_SRC" ]]  && { err "com.spoofdpi.plist bulunamadı: $PLIST_SRC"; exit 1; }
 ok "Kaynak dosyalar mevcut"
-
-if [[ ! -w "$BIN_DIR" ]]; then
-    err "$BIN_DIR dizinine yazma izni yok."
-    echo ""
-    echo -e "  ${YELLOW}Çözüm:${RESET} Aşağıdaki komutla tekrar çalıştır:"
-    echo -e "  ${CYAN}sudo chown -R $(whoami) /usr/local/bin /usr/local/var${RESET}"
-    echo ""
-    exit 1
-fi
-ok "/usr/local/bin yazılabilir"
 
 # ── Zaten kurulu mu? ───────────────────────────────────────────────────────────
 if [[ -f "$BIN_DIR/spoofdpi" ]] || [[ -f "$PLIST_DEST" ]]; then
@@ -94,7 +102,7 @@ if [[ -f "$BIN_DIR/spoofdpi" ]] || [[ -f "$PLIST_DEST" ]]; then
 fi
 
 # ── [1] Binary'ler ─────────────────────────────────────────────────────────────
-step "[1/5] Binary'ler kopyalanıyor..."
+step "[1/5] Binary'ler kopyalanıyor... (${ARCH})"
 cp "$BINARY_SRC" "$BIN_DIR/spoofdpi"
 chmod +x "$BIN_DIR/spoofdpi"
 ok "spoofdpi → $BIN_DIR/spoofdpi"
@@ -119,6 +127,11 @@ if launchctl list "$LABEL" &>/dev/null; then
 fi
 
 cp "$PLIST_SRC" "$PLIST_DEST"
+
+# Binary ve log yollarını plist'te güncelle
+/usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $BIN_DIR/spoofdpi" "$PLIST_DEST"
+/usr/libexec/PlistBuddy -c "Set :StandardOutPath $LOG_DIR/spoofdpi.log" "$PLIST_DEST"
+/usr/libexec/PlistBuddy -c "Set :StandardErrorPath $LOG_DIR/spoofdpi.error.log" "$PLIST_DEST"
 ok "plist → $PLIST_DEST"
 
 launchctl load "$PLIST_DEST"
@@ -138,7 +151,11 @@ fi
 
 # ── [5] İlk başlatma ───────────────────────────────────────────────────────────
 step "[5/5] Servis başlatılıyor..."
-launchctl start "$LABEL"
+if launchctl kickstart -k "gui/$(id -u)/$LABEL" &>/dev/null 2>&1; then
+    true
+else
+    launchctl start "$LABEL" 2>/dev/null || true
+fi
 sleep 0.8
 
 PID=$(launchctl list "$LABEL" 2>/dev/null | grep '"PID"' | grep -oE '[0-9]+' || true)
