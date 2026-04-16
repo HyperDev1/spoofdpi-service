@@ -12,7 +12,6 @@
         <string>127.0.0.1</string>
         <string>-port</string>
         <string>8080</string>
-        <string>-system-proxy</string>
         <string>-silent</string>
     </array>
 

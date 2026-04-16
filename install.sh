@@ -33,6 +33,7 @@ fi
 BINARY_SRC="$SCRIPT_DIR/$BINARY_NAME"
 CTL_SRC="$SCRIPT_DIR/spoofdpi-ctl"
 PLIST_SRC="$SCRIPT_DIR/com.spoofdpi.plist"
+PAC_SRC="$SCRIPT_DIR/discord-proxy.pac"
 
 # Apple Silicon'da /opt/homebrew, Intel'de /usr/local
 if [[ -d "/opt/homebrew" ]]; then
@@ -67,9 +68,17 @@ if [[ "${1:-}" == "--uninstall" ]]; then
     fi
 
     step "[2/3] Dosyalar siliniyor..."
-    rm -f "$BIN_DIR/spoofdpi"     && ok "spoofdpi silindi"     || warn "spoofdpi bulunamadı"
-    rm -f "$BIN_DIR/spoofdpi-ctl" && ok "spoofdpi-ctl silindi" || warn "spoofdpi-ctl bulunamadı"
-    rm -f "$PLIST_DEST"           && ok "plist silindi"        || warn "plist bulunamadı"
+    # PAC proxy ayarlarını temizle
+    networksetup -listallnetworkservices 2>/dev/null | tail -n +2 | while read -r svc; do
+        [[ "$svc" == \** ]] && continue
+        networksetup -setautoproxystate "$svc" off 2>/dev/null || true
+    done
+    ok "PAC proxy ayarları temizlendi"
+
+    rm -f "$BIN_DIR/spoofdpi"           && ok "spoofdpi silindi"           || warn "spoofdpi bulunamadı"
+    rm -f "$BIN_DIR/spoofdpi-ctl"       && ok "spoofdpi-ctl silindi"       || warn "spoofdpi-ctl bulunamadı"
+    rm -f "$BIN_DIR/discord-proxy.pac"  && ok "discord-proxy.pac silindi"  || warn "discord-proxy.pac bulunamadı"
+    rm -f "$PLIST_DEST"                 && ok "plist silindi"              || warn "plist bulunamadı"
 
     step "[3/3] Log dizini..."
     if [[ -d "$LOG_DIR" ]]; then
@@ -93,6 +102,7 @@ step "[0/5] Kontroller..."
 [[ ! -f "$BINARY_SRC" ]] && { err "spoofdpi binary bulunamadı: $BINARY_SRC (mimari: $ARCH)"; exit 1; }
 [[ ! -f "$CTL_SRC" ]]    && { err "spoofdpi-ctl bulunamadı: $CTL_SRC"; exit 1; }
 [[ ! -f "$PLIST_SRC" ]]  && { err "com.spoofdpi.plist bulunamadı: $PLIST_SRC"; exit 1; }
+[[ ! -f "$PAC_SRC" ]]    && { err "discord-proxy.pac bulunamadı: $PAC_SRC"; exit 1; }
 ok "Kaynak dosyalar mevcut"
 
 # ── Zaten kurulu mu? ───────────────────────────────────────────────────────────
@@ -111,6 +121,9 @@ ok "spoofdpi → $BIN_DIR/spoofdpi"
 cp "$CTL_SRC" "$BIN_DIR/spoofdpi-ctl"
 chmod +x "$BIN_DIR/spoofdpi-ctl"
 ok "spoofdpi-ctl → $BIN_DIR/spoofdpi-ctl"
+
+cp "$PAC_SRC" "$BIN_DIR/discord-proxy.pac"
+ok "discord-proxy.pac → $BIN_DIR/discord-proxy.pac"
 
 # ── [2] Log dizini ─────────────────────────────────────────────────────────────
 step "[2/5] Log dizini oluşturuluyor..."

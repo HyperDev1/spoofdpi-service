@@ -7,6 +7,10 @@ LABEL="com.spoofdpi"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 BIN_DIR="/opt/homebrew/bin"
 
+# PAC dosyası yolu
+PAC_FILE="$BIN_DIR/discord-proxy.pac"
+PAC_URL="file://$PAC_FILE"
+
 # Log dizinini dinamik bul
 if [[ -d "/opt/homebrew/var/log/spoofdpi" ]]; then
     LOG_OUT="/opt/homebrew/var/log/spoofdpi/spoofdpi.log"
@@ -51,6 +55,42 @@ check_plist() {
     fi
 }
 
+# ── PAC Proxy Yönetimi ────────────────────────────────────────────────────────
+get_active_services() {
+    # Aktif ağ servislerini bul (Wi-Fi, Ethernet vb.)
+    networksetup -listallnetworkservices 2>/dev/null | tail -n +2 | while read -r svc; do
+        # Devre dışı servisleri (* ile başlar) atla
+        [[ "$svc" == \** ]] && continue
+        echo "$svc"
+    done
+}
+
+set_pac_proxy() {
+    if [[ ! -f "$PAC_FILE" ]]; then
+        err "PAC dosyası bulunamadı: $PAC_FILE"
+        return 1
+    fi
+    local count=0
+    while IFS= read -r svc; do
+        networksetup -setautoproxyurl "$svc" "$PAC_URL" 2>/dev/null && ((count++)) || true
+    done < <(get_active_services)
+    if (( count > 0 )); then
+        ok "PAC proxy ayarlandı (sadece Discord trafiği) — $count ağ servisi"
+    else
+        warn "PAC proxy ayarlanamadı — aktif ağ servisi bulunamadı"
+    fi
+}
+
+clear_pac_proxy() {
+    local count=0
+    while IFS= read -r svc; do
+        networksetup -setautoproxystate "$svc" off 2>/dev/null && ((count++)) || true
+    done < <(get_active_services)
+    if (( count > 0 )); then
+        ok "PAC proxy kaldırıldı — $count ağ servisi"
+    fi
+}
+
 # ── Komutlar ───────────────────────────────────────────────────────────────────
 cmd_start() {
     check_plist
@@ -70,6 +110,7 @@ cmd_start() {
     sleep 0.5
     if is_running; then
         ok "SpoofDPI başlatıldı (PID: $(get_pid))"
+        set_pac_proxy
     else
         err "Başlatılamadı. Log kontrol et: spoofdpi-ctl log"
         exit 1
@@ -77,6 +118,9 @@ cmd_start() {
 }
 
 cmd_stop() {
+    # Önce PAC proxy'yi kaldır
+    clear_pac_proxy
+
     if ! is_loaded; then
         warn "SpoofDPI zaten durmuş"
         return
@@ -115,9 +159,11 @@ cmd_status() {
         local port
         port=$(ps aux | grep '[s]poofdpi' | grep -oE '\-port [0-9]+' | awk '{print $2}')
         [[ -n "$port" ]] && echo -e "Port   : ${CYAN}$port${RESET}" || echo -e "Port   : ${CYAN}8080${RESET} (varsayılan)"
+        echo -e "Mod    : ${CYAN}Sadece Discord${RESET} (PAC proxy)"
     else
         echo -e "Durum  : ${RED}● Durmuş${RESET}"
     fi
+    echo -e "PAC    : $PAC_FILE"
     echo -e "Plist  : $PLIST"
     echo -e "Log    : $LOG_OUT"
     echo "──────────────────────────────"
@@ -173,14 +219,16 @@ cmd_help() {
     echo -e "${BOLD}spoofdpi-ctl${RESET} — SpoofDPI servis yönetim aracı"
     echo ""
     echo -e "${BOLD}Kullanım:${RESET}"
-    echo -e "  spoofdpi-ctl ${CYAN}start${RESET}           Servisi başlat"
-    echo -e "  spoofdpi-ctl ${CYAN}stop${RESET}            Servisi durdur"
+    echo -e "  spoofdpi-ctl ${CYAN}start${RESET}           Servisi başlat (sadece Discord proxy)"
+    echo -e "  spoofdpi-ctl ${CYAN}stop${RESET}            Servisi durdur (proxy ayarlarını temizle)"
     echo -e "  spoofdpi-ctl ${CYAN}restart${RESET}         Servisi yeniden başlat"
     echo -e "  spoofdpi-ctl ${CYAN}status${RESET}          Servis durumunu göster"
     echo -e "  spoofdpi-ctl ${CYAN}log${RESET} [n]         Son n satır logu göster (varsayılan: 50)"
     echo -e "  spoofdpi-ctl ${CYAN}log -f${RESET}          Logu canlı takip et"
     echo -e "  spoofdpi-ctl ${CYAN}enable${RESET}          Login'de otomatik başlatmayı aç"
     echo -e "  spoofdpi-ctl ${CYAN}disable${RESET}         Login'de otomatik başlatmayı kapat"
+    echo ""
+    echo -e "${BOLD}Not:${RESET} Sadece Discord trafiği proxy'den geçer (PAC dosyası)."
     echo ""
 }
 
